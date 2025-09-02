@@ -42,7 +42,6 @@ feeder_locations = {
 
 # --- Helper Functions ---
 def clean_feeder_name(name):
-    """Clean feeder name formatting."""
     name = str(name).strip()
     name = unicodedata.normalize("NFKD", name)
     name = name.replace('\xa0', ' ')
@@ -50,7 +49,6 @@ def clean_feeder_name(name):
     return name.title()
 
 def compute_metrics(df, group_cols):
-    """Compute SAIDI, SAIFI, CAIDI given group columns."""
     results = (
         df.groupby(group_cols)
         .apply(lambda g: pd.Series({
@@ -144,7 +142,6 @@ filtered_metrics = metrics_df[
 
 # --- Display Metrics ---
 st.subheader(f"📈 Reliability Indices for {selected_feeder} in {selected_month} ({period})")
-
 if not filtered_metrics.empty:
     latest = filtered_metrics.sort_values(group_field).iloc[-1]
     col1, col2, col3 = st.columns(3)
@@ -158,7 +155,6 @@ else:
 # 1) Reliability Indices by Feeder (all feeders)
 # =====================================================
 st.subheader(f"🪛 Reliability Indices by Feeder in {selected_month}")
-
 feeder_data = metrics_df[metrics_df["Month"] == selected_month]
 if period == "Weekly" and selected_week and selected_week != "All Weeks":
     feeder_data = feeder_data[feeder_data["Week"] == selected_week]
@@ -176,7 +172,6 @@ st.plotly_chart(fig_metrics, use_container_width=True)
 # 2) SAIDI & SAIFI Trends (selected feeder only)
 # =====================================================
 st.subheader(f"📅 {period} SAIDI and SAIFI Trends for {selected_feeder}")
-
 trend_data = metrics_df[metrics_df["Feeder Name"] == selected_feeder]
 
 fig_trend = px.line(
@@ -192,7 +187,6 @@ st.plotly_chart(fig_trend, use_container_width=True)
 # 3) Outage Duration by Fault Category
 # =====================================================
 st.subheader(f"⚡ Outage Duration by Fault Category in {selected_month}")
-
 df_month = df_all[df_all["Month"] == selected_month]
 if period == "Weekly" and selected_week and selected_week != "All Weeks":
     df_month = df_month[df_month["Week"] == selected_week]
@@ -209,19 +203,11 @@ st.plotly_chart(fig_fault, use_container_width=True)
 # 4) Feeder Location Map (All feeders, interactive)
 # =====================================================
 st.subheader("🗺️ Feeder Locations & Reliability")
-
-# Controls
-color_metric = st.selectbox("Color by", ["SAIFI", "SAIDI", "CAIDI"], index=0)
-size_metric = st.selectbox("Size by", ["SAIFI", "SAIDI", "CAIDI"], index=1)
-
-# Latest metrics per feeder for the selected month/period
 map_metrics = metrics_df[metrics_df["Month"] == selected_month]
 if period == "Weekly" and selected_week and selected_week != "All Weeks":
     map_metrics = map_metrics[map_metrics["Week"] == selected_week]
 
 latest_metrics = map_metrics.sort_values(group_field).groupby("Feeder Name").tail(1)
-
-# Merge with coordinates
 map_df = latest_metrics.merge(
     df_all[["Feeder Name", "Latitude", "Longitude"]].drop_duplicates(),
     on="Feeder Name",
@@ -235,8 +221,8 @@ if not map_df.empty:
         lon="Longitude",
         hover_name="Feeder Name",
         hover_data={"SAIFI": ":.3f", "SAIDI": ":.3f", "CAIDI": ":.3f"},
-        color=color_metric,
-        size=size_metric,
+        color="SAIFI",
+        size="SAIDI",
         zoom=9,
         height=600
     )
