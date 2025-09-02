@@ -94,9 +94,15 @@ period = st.sidebar.radio("Select Period", ["Daily", "Weekly", "Monthly"])
 month_options = sorted(df_all["Month"].unique())
 selected_month = st.sidebar.selectbox("Select Month", month_options)
 
-# Dynamically update feeder options
+# Feeder options depend on month
 feeder_options = sorted(df_all[df_all["Month"] == selected_month]["Feeder Name"].unique())
 selected_feeder = st.sidebar.selectbox("Select Feeder", feeder_options)
+
+# Optional week filter when Weekly is chosen
+selected_week = None
+if period == "Weekly":
+    week_options = sorted(df_all[df_all["Month"] == selected_month]["Week"].unique())
+    selected_week = st.sidebar.selectbox("Select Week (optional)", ["All Weeks"] + list(week_options))
 
 # --- Select Metrics Based on Period ---
 if period == "Daily":
@@ -105,6 +111,8 @@ if period == "Daily":
 elif period == "Weekly":
     metrics_df = weekly_metrics
     group_field = "Week"
+    if selected_week and selected_week != "All Weeks":
+        metrics_df = metrics_df[metrics_df["Week"] == selected_week]
 else:
     metrics_df = monthly_metrics
     group_field = "Month"
@@ -130,8 +138,13 @@ else:
 # 1) Reliability Indices by Feeder (all feeders)
 # =====================================================
 st.subheader(f"🪛 Reliability Indices by Feeder in {selected_month}")
+
+feeder_data = metrics_df[metrics_df["Month"] == selected_month]
+if period == "Weekly" and selected_week and selected_week != "All Weeks":
+    feeder_data = feeder_data[feeder_data["Week"] == selected_week]
+
 fig_metrics = px.bar(
-    metrics_df[metrics_df["Month"] == selected_month],
+    feeder_data,
     x="Feeder Name",
     y=["SAIFI", "SAIDI", "CAIDI"],
     barmode="group",
@@ -140,9 +153,10 @@ fig_metrics = px.bar(
 st.plotly_chart(fig_metrics, use_container_width=True)
 
 # =====================================================
-# 2) SAIDI & SAIFI Trends (toggle Daily/Weekly/Monthly)
+# 2) SAIDI & SAIFI Trends
 # =====================================================
 st.subheader(f"📅 {period} SAIDI and SAIFI Trends for {selected_feeder}")
+
 trend_data = metrics_df[metrics_df["Feeder Name"] == selected_feeder]
 
 fig_trend = px.line(
@@ -158,7 +172,10 @@ st.plotly_chart(fig_trend, use_container_width=True)
 # 3) Outage Duration by Fault Category
 # =====================================================
 st.subheader(f"⚡ Outage Duration by Fault Category in {selected_month}")
+
 df_month = df_all[df_all["Month"] == selected_month]
+if period == "Weekly" and selected_week and selected_week != "All Weeks":
+    df_month = df_month[df_month["Week"] == selected_week]
 
 fig_fault = px.box(
     df_month,
