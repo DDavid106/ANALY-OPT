@@ -24,6 +24,22 @@ creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
 client = gspread.authorize(creds)
 spreadsheet = client.open("Reliability Monitoring Sheet")
 
+# --- Dummy feeder locations ---
+feeder_locations = {
+    "Bombo 1": {"lat": 0.600, "lon": 32.550},
+    "Kololo": {"lat": 0.335, "lon": 32.590},
+    "Bombo Rd Industrial": {"lat": 0.345, "lon": 32.565},
+    "Luwero/Kyampisi": {"lat": 0.830, "lon": 32.500},
+    "Bombo 33": {"lat": 0.650, "lon": 32.520},
+    "China Golden": {"lat": 0.370, "lon": 32.580},
+    "Wabigalo": {"lat": 0.330, "lon": 32.610},
+    "Matuga 1": {"lat": 0.550, "lon": 32.480},
+    "Roofings 1": {"lat": 0.520, "lon": 32.470},
+    "Steel and Tube": {"lat": 0.510, "lon": 32.460},
+    "Matuga 3": {"lat": 0.555, "lon": 32.490},
+    "Ugachic": {"lat": 0.560, "lon": 32.450},
+}
+
 # --- Helper Functions ---
 def clean_feeder_name(name):
     """Clean feeder name formatting."""
@@ -76,6 +92,10 @@ for ws in spreadsheet.worksheets():
     # Add time columns
     df["Date"] = df["Interruption Time"].dt.date
     df["Week"] = df["Interruption Time"].dt.strftime("%Y-W%U")
+
+    # Add dummy location info
+    df["Latitude"] = df["Feeder Name"].map(lambda x: feeder_locations.get(x, {}).get("lat", None))
+    df["Longitude"] = df["Feeder Name"].map(lambda x: feeder_locations.get(x, {}).get("lon", None))
 
     all_data.append(df)
 
@@ -184,3 +204,24 @@ fig_fault = px.box(
     title="Outage Duration Distribution"
 )
 st.plotly_chart(fig_fault, use_container_width=True)
+
+# =====================================================
+# 4) Feeder Location Map
+# =====================================================
+st.subheader("🗺️ Feeder Locations")
+
+map_df = df_all[["Feeder Name", "Latitude", "Longitude"]].drop_duplicates().dropna()
+
+if not map_df.empty:
+    fig_map = px.scatter_mapbox(
+        map_df,
+        lat="Latitude",
+        lon="Longitude",
+        hover_name="Feeder Name",
+        zoom=9,
+        height=500
+    )
+    fig_map.update_layout(mapbox_style="open-street-map")
+    st.plotly_chart(fig_map, use_container_width=True)
+else:
+    st.warning("No location data available.")
