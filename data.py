@@ -110,15 +110,14 @@ monthly_metrics = compute_metrics(df_all, ["Feeder Name", "Month"])
 st.sidebar.header("🔎 Filters")
 
 period = st.sidebar.radio("Select Period", ["Daily", "Weekly", "Monthly"])
-
 month_options = sorted(df_all["Month"].unique())
 selected_month = st.sidebar.selectbox("Select Month", month_options)
 
-# Feeder options depend on month
+# Feeder only used for trends/cards
 feeder_options = sorted(df_all[df_all["Month"] == selected_month]["Feeder Name"].unique())
 selected_feeder = st.sidebar.selectbox("Select Feeder", feeder_options)
 
-# Optional week filter when Weekly is chosen
+# Week filter if weekly
 selected_week = None
 if period == "Weekly":
     week_options = sorted(df_all[df_all["Month"] == selected_month]["Week"].unique())
@@ -137,6 +136,7 @@ else:
     metrics_df = monthly_metrics
     group_field = "Month"
 
+# Filtered metrics for cards/trends (selected feeder only)
 filtered_metrics = metrics_df[
     (metrics_df["Month"] == selected_month) &
     (metrics_df["Feeder Name"] == selected_feeder)
@@ -173,7 +173,7 @@ fig_metrics = px.bar(
 st.plotly_chart(fig_metrics, use_container_width=True)
 
 # =====================================================
-# 2) SAIDI & SAIFI Trends
+# 2) SAIDI & SAIFI Trends (selected feeder only)
 # =====================================================
 st.subheader(f"📅 {period} SAIDI and SAIFI Trends for {selected_feeder}")
 
@@ -206,20 +206,19 @@ fig_fault = px.box(
 st.plotly_chart(fig_fault, use_container_width=True)
 
 # =====================================================
-# 4) Feeder Location Map (Interactive)
+# 4) Feeder Location Map (All feeders, interactive)
 # =====================================================
 st.subheader("🗺️ Feeder Locations & Reliability")
 
-# Metric controls for map
+# Controls
 color_metric = st.selectbox("Color by", ["SAIFI", "SAIDI", "CAIDI"], index=0)
 size_metric = st.selectbox("Size by", ["SAIFI", "SAIDI", "CAIDI"], index=1)
 
-# Get the latest metrics per feeder for this period & month
+# Latest metrics per feeder for the selected month/period
 map_metrics = metrics_df[metrics_df["Month"] == selected_month]
 if period == "Weekly" and selected_week and selected_week != "All Weeks":
     map_metrics = map_metrics[map_metrics["Week"] == selected_week]
 
-# Keep the latest record for each feeder
 latest_metrics = map_metrics.sort_values(group_field).groupby("Feeder Name").tail(1)
 
 # Merge with coordinates
