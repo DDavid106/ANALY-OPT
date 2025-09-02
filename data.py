@@ -206,11 +206,28 @@ fig_fault = px.box(
 st.plotly_chart(fig_fault, use_container_width=True)
 
 # =====================================================
-# 4) Feeder Location Map
+# 4) Feeder Location Map (Interactive)
 # =====================================================
-st.subheader("🗺️ Feeder Locations")
+st.subheader("🗺️ Feeder Locations & Reliability")
 
-map_df = df_all[["Feeder Name", "Latitude", "Longitude"]].drop_duplicates().dropna()
+# Metric controls for map
+color_metric = st.selectbox("Color by", ["SAIFI", "SAIDI", "CAIDI"], index=0)
+size_metric = st.selectbox("Size by", ["SAIFI", "SAIDI", "CAIDI"], index=1)
+
+# Get the latest metrics per feeder for this period & month
+map_metrics = metrics_df[metrics_df["Month"] == selected_month]
+if period == "Weekly" and selected_week and selected_week != "All Weeks":
+    map_metrics = map_metrics[map_metrics["Week"] == selected_week]
+
+# Keep the latest record for each feeder
+latest_metrics = map_metrics.sort_values(group_field).groupby("Feeder Name").tail(1)
+
+# Merge with coordinates
+map_df = latest_metrics.merge(
+    df_all[["Feeder Name", "Latitude", "Longitude"]].drop_duplicates(),
+    on="Feeder Name",
+    how="left"
+).dropna(subset=["Latitude", "Longitude"])
 
 if not map_df.empty:
     fig_map = px.scatter_mapbox(
@@ -218,8 +235,11 @@ if not map_df.empty:
         lat="Latitude",
         lon="Longitude",
         hover_name="Feeder Name",
+        hover_data={"SAIFI": ":.3f", "SAIDI": ":.3f", "CAIDI": ":.3f"},
+        color=color_metric,
+        size=size_metric,
         zoom=9,
-        height=500
+        height=600
     )
     fig_map.update_layout(mapbox_style="open-street-map")
     st.plotly_chart(fig_map, use_container_width=True)
