@@ -17,15 +17,14 @@ scopes = [
     "https://www.googleapis.com/auth/drive"
 ]
 
-# Load credentials dict from Streamlit secrets and make a copy
+# Load credentials dict from Streamlit secrets and fix private key newlines
 creds_dict = dict(st.secrets["gcp_service_account"])
-# Fix private key newlines
 creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
-
 creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
 client = gspread.authorize(creds)
 spreadsheet = client.open("Reliability Monitoring Sheet")
 
+# --- Helper Functions ---
 def clean_feeder_name(name):
     name = str(name).strip()
     name = unicodedata.normalize("NFKD", name)
@@ -33,6 +32,7 @@ def clean_feeder_name(name):
     name = ' '.join(name.split())
     return name.title()
 
+# --- Load and process all worksheets ---
 metrics = []
 all_data = []
 
@@ -47,14 +47,17 @@ for ws in spreadsheet.worksheets():
     df["Month"] = month
     df["Feeder Name"] = df["Feeder Name"].apply(clean_feeder_name)
 
+    # Convert to datetime
     df["Interruption Time"] = pd.to_datetime(df["Interruption Time"], errors='coerce', dayfirst=True)
     df["Restoration Time"] = pd.to_datetime(df["Restoration Time"], errors='coerce', dayfirst=True)
     df["Duration (hr)"] = (df["Restoration Time"] - df["Interruption Time"]).dt.total_seconds() / 3600
 
+    # Numeric conversions
     df["Customer No"] = pd.to_numeric(df["Customer No"], errors='coerce')
     df["Elapsed Time"] = pd.to_numeric(df["Elapsed Time"], errors='coerce')
     df.dropna(subset=["Customer No", "Elapsed Time", "Fault Category"], inplace=True)
 
+    # Compute metrics by feeder
     feeder_groups = df.groupby("Feeder Name")
     for feeder_name, group in feeder_groups:
         N_total = group["Customer No"].nunique()
@@ -74,17 +77,22 @@ for ws in spreadsheet.worksheets():
 
     all_data.append(df)
 
+# Combine data
 df_all = pd.concat(all_data, ignore_index=True)
 metrics_df = pd.DataFrame(metrics)
 
-# --- User Filters ---
+# --- Sidebar Filters ---
 st.sidebar.header("🔎 Filters")
-month_options = sorted(df_all["Month"].unique())
-feeder_options = sorted(df_all["Feeder Name"].unique())
 
+month_options = sorted(df_all["Month"].unique())
 selected_month = st.sidebar.selectbox("Select Month", month_options)
+
+# Dynamically update feeder options based on selected month
+feeder_options = sorted(df_all[df_all["Month"] == selected_month]["Feeder Name"].unique())
 selected_feeder = st.sidebar.selectbox("Select Feeder", feeder_options)
 
+# Filter data for selected month and feeder
+df_month = df_all[df_all["Month"] == selected_month]
 filtered_metrics = metrics_df[(metrics_df["Month"] == selected_month) & (metrics_df["Feeder Name"] == selected_feeder)]
 
 # --- Metrics Display ---
@@ -98,16 +106,29 @@ else:
     st.warning("No metrics available for this selection.")
 
 # --- Plots ---
+
+# Reliability Indices by Feeder (filtered by month)
 st.subheader("🪛 Reliability Indices by Feeder")
-fig_metrics = px.bar(metrics_df, x="Feeder Name", y=["SAIFI", "SAIDI", "CAIDI"], barmode="group")
+fig_metrics = px.bar(
+    metrics_df[metrics_df["Month"] == selected_month],
+    x="Feeder Name",
+    y=["SAIFI", "SAIDI", "CAIDI"],
+    barmode="group"
+)
 st.plotly_chart(fig_metrics, use_container_width=True)
 
+# Outage Duration by Fault Category
 st.subheader("⚡ Outage Duration by Fault Category")
-fig_fault = px.box(df_all, x="Fault Category", y="Elapsed Time")
+fig_fault = px.box(
+    df_month,
+    x="Fault Category",
+    y="Elapsed Time"
+)
 st.plotly_chart(fig_fault, use_container_width=True)
 
+# Monthly SAIDI and SAIFI Trends (up to selected month)
 st.subheader("📅 Monthly SAIDI and SAIFI Trends")
-monthly = df_all.groupby("Month").agg({
+monthly = df_all[df_all["Month"] <= selected_month].groupby("Month").agg({
     "Elapsed Time": "sum",
     "Customer No": "count"
 }).reset_index()
@@ -115,5 +136,10 @@ monthly = df_all.groupby("Month").agg({
 monthly["SAIDI"] = monthly["Elapsed Time"] / monthly["Customer No"]
 monthly["SAIFI"] = monthly["Customer No"] / monthly["Customer No"]  # Placeholder (equals 1)
 
-fig_monthly = px.line(monthly, x="Month", y=["SAIDI", "SAIFI"], markers=True)
+fig_monthly = px.line(
+    monthly,
+    x="Month",
+    y=["SAIDI", "SAIFI"],
+    markers=True
+)
 st.plotly_chart(fig_monthly, use_container_width=True)
