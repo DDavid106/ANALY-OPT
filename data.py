@@ -31,29 +31,28 @@ def clean_feeder_name(name):
     name = unicodedata.normalize("NFKD", name)
     name = name.replace('\xa0', ' ')
     name = ' '.join(name.split())
-    return name  # avoid .title() to preserve acronyms
+    return name.title()
 
 def compute_metrics(df, group_cols):
-    """Compute SAIDI, SAIFI, CAIDI given grouping columns."""
+    """Compute SAIDI, SAIFI, CAIDI given group columns."""
     results = (
         df.groupby(group_cols)
         .apply(lambda g: pd.Series({
             "SAIDI": (g["Duration (hr)"] * g["Customer No"]).sum() / g["Customer No"].sum()
                       if g["Customer No"].sum() > 0 else 0,
-            "SAIFI": g["Customer No"].sum() / g["Customer No"].sum()
-                      if g["Customer No"].sum() > 0 else 0,
+            "SAIFI": len(g) / g["Customer No"].nunique()
+                      if g["Customer No"].nunique() > 0 else 0,
             "CAIDI": (
-                (g["Duration (hr)"] * g["Customer No"]).sum() / g["Customer No"].sum()
-            ) / (g["Customer No"].sum() / g["Customer No"].sum())
-                      if g["Customer No"].sum() > 0 else 0
+                ((g["Duration (hr)"] * g["Customer No"]).sum() / g["Customer No"].sum())
+                / (len(g) / g["Customer No"].nunique())
+            ) if g["Customer No"].nunique() > 0 and len(g) > 0 else 0
         }))
         .reset_index()
     )
     return results
 
-# --- Load and process all worksheets ---
+# --- Load and Process Worksheets ---
 all_data = []
-
 for ws in spreadsheet.worksheets():
     month = ws.title
     data = ws.get_all_records()
@@ -65,22 +64,21 @@ for ws in spreadsheet.worksheets():
     df["Month"] = month
     df["Feeder Name"] = df["Feeder Name"].apply(clean_feeder_name)
 
-    # Convert to datetime
+    # Convert datetime
     df["Interruption Time"] = pd.to_datetime(df["Interruption Time"], errors="coerce", dayfirst=True)
     df["Restoration Time"] = pd.to_datetime(df["Restoration Time"], errors="coerce", dayfirst=True)
     df["Duration (hr)"] = (df["Restoration Time"] - df["Interruption Time"]).dt.total_seconds() / 3600
 
-    # Add daily and weekly grouping fields
+    # Numeric conversions
+    df["Customer No"] = pd.to_numeric(df["Customer No"], errors="coerce")
+    df["Elapsed Time"] = pd.to_numeric(df["Elapsed Time"], errors="coerce")
+
+    # Add time columns
     df["Date"] = df["Interruption Time"].dt.date
     df["Week"] = df["Interruption Time"].dt.strftime("%Y-W%U")
 
-    # Ensure numeric
-    df["Customer No"] = pd.to_numeric(df["Customer No"], errors="coerce")
-    df.dropna(subset=["Customer No", "Duration (hr)", "Fault Category"], inplace=True)
-
     all_data.append(df)
 
-# Combine all months
 df_all = pd.concat(all_data, ignore_index=True)
 
 # --- Build Metrics ---
@@ -96,11 +94,11 @@ period = st.sidebar.radio("Select Period", ["Daily", "Weekly", "Monthly"])
 month_options = sorted(df_all["Month"].unique())
 selected_month = st.sidebar.selectbox("Select Month", month_options)
 
-# Update feeder options dynamically
+# Dynamically update feeder options
 feeder_options = sorted(df_all[df_all["Month"] == selected_month]["Feeder Name"].unique())
 selected_feeder = st.sidebar.selectbox("Select Feeder", feeder_options)
 
-# --- Select dataset based on period ---
+# --- Select Metrics Based on Period ---
 if period == "Daily":
     metrics_df = daily_metrics
     group_field = "Date"
@@ -116,8 +114,8 @@ filtered_metrics = metrics_df[
     (metrics_df["Feeder Name"] == selected_feeder)
 ]
 
-# --- Metrics Display ---
-st.subheader(f"📊 {period} Reliability Indices for {selected_feeder} in {selected_month}")
+# --- Display Metrics ---
+st.subheader(f"📈 Reliability Indices for {selected_feeder} in {selected_month} ({period})")
 
 if not filtered_metrics.empty:
     latest = filtered_metrics.sort_values(group_field).iloc[-1]
@@ -128,25 +126,44 @@ if not filtered_metrics.empty:
 else:
     st.warning("No metrics available for this selection.")
 
-# --- Plots ---
-st.subheader(f"📈 {period} Trends for {selected_feeder}")
+# =====================================================
+# 1) Reliability Indices by Feeder (all feeders)
+# =====================================================
+st.subheader(f"🪛 Reliability Indices by Feeder in {selected_month}")
+fig_metrics = px.bar(
+    metrics_df[metrics_df["Month"] == selected_month],
+    x="Feeder Name",
+    y=["SAIFI", "SAIDI", "CAIDI"],
+    barmode="group",
+    title=f"Feeder Indices ({period})"
+)
+st.plotly_chart(fig_metrics, use_container_width=True)
 
-if not filtered_metrics.empty:
-    fig = px.line(
-        filtered_metrics,
-        x=group_field,
-        y=["SAIDI", "SAIFI"],
-        markers=True,
-        title=f"{period} SAIDI & SAIFI Trends"
-    )
-    st.plotly_chart(fig, use_container_width=True)
+# =====================================================
+# 2) SAIDI & SAIFI Trends (toggle Daily/Weekly/Monthly)
+# =====================================================
+st.subheader(f"📅 {period} SAIDI and SAIFI Trends for {selected_feeder}")
+trend_data = metrics_df[metrics_df["Feeder Name"] == selected_feeder]
 
-    fig_caidi = px.bar(
-        filtered_metrics,
-        x=group_field,
-        y="CAIDI",
-        title=f"{period} CAIDI Trends"
-    )
-    st.plotly_chart(fig_caidi, use_container_width=True)
-else:
-    st.info("No trend data available for the selected filters.")
+fig_trend = px.line(
+    trend_data,
+    x=group_field,
+    y=["SAIDI", "SAIFI"],
+    markers=True,
+    title=f"{period} Trends for {selected_feeder}"
+)
+st.plotly_chart(fig_trend, use_container_width=True)
+
+# =====================================================
+# 3) Outage Duration by Fault Category
+# =====================================================
+st.subheader(f"⚡ Outage Duration by Fault Category in {selected_month}")
+df_month = df_all[df_all["Month"] == selected_month]
+
+fig_fault = px.box(
+    df_month,
+    x="Fault Category",
+    y="Elapsed Time",
+    title="Outage Duration Distribution"
+)
+st.plotly_chart(fig_fault, use_container_width=True)
