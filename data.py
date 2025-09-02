@@ -107,42 +107,14 @@ else:
 
 # --- Plots ---
 
-# --- Reliability Indices by Feeder (filtered by month, sorted by SAIDI) ---
+# Reliability Indices by Feeder (filtered by month)
 st.subheader("🪛 Reliability Indices by Feeder")
-
-# Filter metrics for the selected month
-metrics_month = metrics_df[metrics_df["Month"] == selected_month]
-
-# Sort feeders by SAIDI (highest first)
-metrics_month = metrics_month.sort_values(by="SAIDI", ascending=False)
-
-# Create bar chart
 fig_metrics = px.bar(
-    metrics_month,
+    metrics_df[metrics_df["Month"] == selected_month],
     x="Feeder Name",
     y=["SAIFI", "SAIDI", "CAIDI"],
-    barmode="group",
-    color_discrete_map={
-        "SAIFI": "royalblue",
-        "SAIDI": "firebrick",
-        "CAIDI": "green"
-    },
-    hover_data={
-        "Feeder Name": True,
-        "SAIFI": ":.4f",
-        "SAIDI": ":.2f",
-        "CAIDI": ":.2f"
-    }
+    barmode="group"
 )
-
-fig_metrics.update_layout(
-    title=f"Reliability Indices by Feeder for {selected_month}",
-    xaxis_title="Feeder Name",
-    yaxis_title="Value",
-    legend_title="Metric",
-    xaxis_tickangle=-45
-)
-
 st.plotly_chart(fig_metrics, use_container_width=True)
 
 # Outage Duration by Fault Category
